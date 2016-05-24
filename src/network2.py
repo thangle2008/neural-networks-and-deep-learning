@@ -202,11 +202,20 @@ class Network(object):
         y = np.column_stack([m[1] for m in mini_batch])
 
         nabla_b, nabla_w = self.backprop(X, y)
+        m = len(mini_batch)
 
-        self.weights = [(1-eta*(lmbda/n))*w-(eta/len(mini_batch))*nw
-                        for w, nw in zip(self.weights, nabla_w)]
-        self.biases = [b-(eta/len(mini_batch))*nb
+        self.regularized_gradient_L2(nabla_w, eta, lmbda, m, n)
+
+        self.biases = [b-(eta/m)*nb
                        for b, nb in zip(self.biases, nabla_b)]
+
+    def regularized_gradient_L1(self, nabla_w, eta, lmbda, m, n):
+        self.weights = [(w - (eta * lmbda / n) * np.sign(w) - \
+            (eta / m) * nw) for w, nw in zip(self.weights, nabla_w)]
+
+    def regularized_gradient_L2(self, nabla_w, eta, lmbda, m, n):
+        self.weights = [(1-eta*(lmbda/n))*w-(eta/m)*nw
+                        for w, nw in zip(self.weights, nabla_w)]
 
     def backprop(self, x, y):
         """Return a tuple ``(nabla_b, nabla_w)`` representing the
@@ -293,6 +302,8 @@ class Network(object):
             cost += self.cost.fn(a, y)/len(data)
         cost += 0.5*(lmbda/len(data))*sum(
             np.linalg.norm(w)**2 for w in self.weights)
+        #cost += (lmbda/len(data))*sum(
+        #    np.sum(np.abs(w)) for w in self.weights)
         return cost
 
     def save(self, filename):
