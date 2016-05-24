@@ -99,6 +99,7 @@ class Network(object):
         self.biases = [np.random.randn(y, 1) for y in self.sizes[1:]]
         self.weights = [np.random.randn(y, x)/np.sqrt(x)
                         for x, y in zip(self.sizes[:-1], self.sizes[1:])]
+        self.velocities = self.weights[:]
 
     def large_weight_initializer(self):
         """Initialize the weights using a Gaussian distribution with mean 0
@@ -135,7 +136,8 @@ class Network(object):
             monitor_training_accuracy=False,
             early_stopping=False,
             threshold_stopping = 10,
-            adjust_learning_rate=False):
+            adjust_learning_rate=False,
+            momentum=False, mu = 0.5):
         """Train the neural network using mini-batch stochastic gradient
         descent.  The ``training_data`` is a list of tuples ``(x, y)``
         representing the training inputs and the desired outputs.  The
@@ -174,7 +176,8 @@ class Network(object):
                 for k in xrange(0, n, mini_batch_size)]
             for mini_batch in mini_batches:
                 self.update_mini_batch(
-                    mini_batch, current_eta, lmbda, len(training_data))
+                    mini_batch, current_eta, lmbda, len(training_data),
+                    momentum, mu)
             print "Epoch %s training complete" % j
             if monitor_training_cost:
                 cost = self.total_cost(training_data, lmbda)
@@ -217,7 +220,7 @@ class Network(object):
         return evaluation_cost, evaluation_accuracy, \
             training_cost, training_accuracy
 
-    def update_mini_batch(self, mini_batch, eta, lmbda, n):
+    def update_mini_batch(self, mini_batch, eta, lmbda, n, momentum=False, mu=None):
         """Update the network's weights and biases by applying gradient
         descent using backpropagation to a single mini batch.  The
         ``mini_batch`` is a list of tuples ``(x, y)``, ``eta`` is the
@@ -234,7 +237,7 @@ class Network(object):
         nabla_b, nabla_w = self.backprop(X, y)
         m = len(mini_batch)
 
-        self.regularized_gradient_L2(nabla_w, eta, lmbda, m, n)
+        self.regularized_gradient_L2(nabla_w, eta, lmbda, m, n, momentum, mu)
 
         self.biases = [b-(eta/m)*nb
                        for b, nb in zip(self.biases, nabla_b)]
@@ -243,9 +246,18 @@ class Network(object):
         self.weights = [(w - (eta * lmbda / n) * np.sign(w) - \
             (eta / m) * nw) for w, nw in zip(self.weights, nabla_w)]
 
-    def regularized_gradient_L2(self, nabla_w, eta, lmbda, m, n):
-        self.weights = [(1-eta*(lmbda/n))*w-(eta/m)*nw
-                        for w, nw in zip(self.weights, nabla_w)]
+    def regularized_gradient_L2(self, nabla_w, eta, lmbda, m, n, 
+                                momentum=False, mu=None):
+        if not momentum:
+            self.weights = [(1-eta*(lmbda/n))*w-(eta/m)*nw
+                            for w, nw in zip(self.weights, nabla_w)]
+        else:
+            self.velocities = [(mu*v-eta*(lmbda/n)*w-(eta/m)*nw)
+                            for v, w, nw in 
+                            zip(self.velocities, self.weights, nabla_w)]
+                            
+            self.weights = [(w + v) 
+                        for w, v in zip(self.weights, self.velocities)]
 
     def backprop(self, x, y):
         """Return a tuple ``(nabla_b, nabla_w)`` representing the
