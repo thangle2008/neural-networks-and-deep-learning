@@ -134,7 +134,8 @@ class Network(object):
             monitor_training_cost=False,
             monitor_training_accuracy=False,
             early_stopping=False,
-            threshold_stopping = 10):
+            threshold_stopping = 10,
+            adjust_learning_rate=False):
         """Train the neural network using mini-batch stochastic gradient
         descent.  The ``training_data`` is a list of tuples ``(x, y)``
         representing the training inputs and the desired outputs.  The
@@ -159,8 +160,13 @@ class Network(object):
         n = len(training_data)
         evaluation_cost, evaluation_accuracy = [], []
         training_cost, training_accuracy = [], []
-        max_accuracy = None
-        non_improvements = 0
+
+        #  variables for early stopping
+        max_accuracy, non_improvements = None, 0    
+
+        # variables for adjusting learning rate
+        current_eta, min_eta, decreasing_factor = eta, eta / 128.0, 2.0
+
         for j in xrange(epochs):
             random.shuffle(training_data)
             mini_batches = [
@@ -168,7 +174,7 @@ class Network(object):
                 for k in xrange(0, n, mini_batch_size)]
             for mini_batch in mini_batches:
                 self.update_mini_batch(
-                    mini_batch, eta, lmbda, len(training_data))
+                    mini_batch, current_eta, lmbda, len(training_data))
             print "Epoch %s training complete" % j
             if monitor_training_cost:
                 cost = self.total_cost(training_data, lmbda)
@@ -188,7 +194,7 @@ class Network(object):
                 evaluation_accuracy.append(accuracy)
                 print "Accuracy on evaluation data: {} / {}".format(
                     self.accuracy(evaluation_data), n_data)
-            if early_stopping:
+            if early_stopping or adjust_learning_rate:
                 accuracy = self.accuracy(evaluation_data)
                 if not max_accuracy:
                     max_accuracy = accuracy
@@ -198,10 +204,15 @@ class Network(object):
                     max_accuracy = accuracy
                     non_improvements = 0
 
-                if non_improvements >= threshold_stopping:
-                    print "There is no more improvement"
-                    print
+                if early_stopping and non_improvements > threshold_stopping:
+                    print "There has been no improvement"
                     break
+                if adjust_learning_rate and non_improvements > threshold_stopping:
+                    current_eta /= decreasing_factor
+                    if current_eta < min_eta:
+                        print "The learning rate is low and there" + \
+                            "is no improvement"
+                        break
             print
         return evaluation_cost, evaluation_accuracy, \
             training_cost, training_accuracy

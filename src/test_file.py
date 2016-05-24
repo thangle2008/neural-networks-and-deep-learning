@@ -5,8 +5,7 @@ training_data, validation_data, test_data = mnist_loader.load_data_wrapper()
 
 net = network2.Network([784, 30, 10], cost = network2.CrossEntropyCost)
 #net.large_weight_initializer()
-net.SGD(training_data[:1000], 30, 10, 1.0, lmbda = 1000.0, evaluation_data= \
-	validation_data[:100], \
+net.SGD(training_data, 30, 10, 1.0, lmbda = 1000.0, evaluation_data= \
+	validation_data, \
 	monitor_evaluation_accuracy=True, \
-	early_stopping=True, \
-	threshold_stopping = 20)
+	adjust_learning_rate=True)
