@@ -132,7 +132,9 @@ class Network(object):
             monitor_evaluation_cost=False,
             monitor_evaluation_accuracy=False,
             monitor_training_cost=False,
-            monitor_training_accuracy=False):
+            monitor_training_accuracy=False,
+            early_stopping=False,
+            threshold_stopping = 10):
         """Train the neural network using mini-batch stochastic gradient
         descent.  The ``training_data`` is a list of tuples ``(x, y)``
         representing the training inputs and the desired outputs.  The
@@ -150,12 +152,15 @@ class Network(object):
         will be a 30-element list containing the cost on the
         evaluation data at the end of each epoch. Note that the lists
         are empty if the corresponding flag is not set.
-
+        If early_stopping flag is true, we implement the no-improvement
+        -in-n epochs strategy.
         """
         if evaluation_data: n_data = len(evaluation_data)
         n = len(training_data)
         evaluation_cost, evaluation_accuracy = [], []
         training_cost, training_accuracy = [], []
+        max_accuracy = None
+        non_improvements = 0
         for j in xrange(epochs):
             random.shuffle(training_data)
             mini_batches = [
@@ -183,6 +188,20 @@ class Network(object):
                 evaluation_accuracy.append(accuracy)
                 print "Accuracy on evaluation data: {} / {}".format(
                     self.accuracy(evaluation_data), n_data)
+            if early_stopping:
+                accuracy = self.accuracy(evaluation_data)
+                if not max_accuracy:
+                    max_accuracy = accuracy
+                elif max_accuracy >= accuracy:
+                    non_improvements += 1
+                else:
+                    max_accuracy = accuracy
+                    non_improvements = 0
+
+                if non_improvements >= threshold_stopping:
+                    print "There is no more improvement"
+                    print
+                    break
             print
         return evaluation_cost, evaluation_accuracy, \
             training_cost, training_accuracy
