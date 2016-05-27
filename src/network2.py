@@ -228,9 +228,6 @@ class Network(object):
         ``n`` is the total size of the training data set.
 
         """
-        nabla_b = [np.zeros(b.shape) for b in self.biases]
-        nabla_w = [np.zeros(w.shape) for w in self.weights]
-
         X = np.column_stack([m[0] for m in mini_batch])
         y = np.column_stack([m[1] for m in mini_batch])
 

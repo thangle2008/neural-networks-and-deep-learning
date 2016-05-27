@@ -101,7 +101,7 @@ class Network(object):
         self.output_dropout = self.layers[-1].output_dropout
 
     def SGD(self, training_data, epochs, mini_batch_size, eta,
-            validation_data, test_data, lmbda=0.0):
+            validation_data, test_data, lmbda=0.0, early_stopping=False):
         """Train the network using mini-batch stochastic gradient descent."""
         training_x, training_y = training_data
         validation_x, validation_y = validation_data
@@ -155,6 +155,7 @@ class Network(object):
             })
         # Do the actual training
         best_validation_accuracy = 0.0
+        non_improvements = 0
         for epoch in xrange(epochs):
             for minibatch_index in xrange(num_training_batches):
                 iteration = num_training_batches*epoch+minibatch_index
@@ -169,17 +170,34 @@ class Network(object):
                     if validation_accuracy >= best_validation_accuracy:
                         print("This is the best validation accuracy to date.")
                         best_validation_accuracy = validation_accuracy
+                        non_improvements = 0
                         best_iteration = iteration
                         if test_data:
                             test_accuracy = np.mean(
                                 [test_mb_accuracy(j) for j in xrange(num_test_batches)])
                             print('The corresponding test accuracy is {0:.2%}'.format(
                                 test_accuracy))
+                    else:
+                        non_improvements += 1
+                        if non_improvements >= 10:
+                            print('There has been no more improvement in accuracy')
+                            break
         print("Finished training network.")
         print("Best validation accuracy of {0:.2%} obtained at iteration {1}".format(
             best_validation_accuracy, best_iteration))
         print("Corresponding test accuracy of {0:.2%}".format(test_accuracy))
-
+    
+    def accuracy(self, test_set):
+        test_x, test_y = test_set
+        i = T.
+        test_accuracy = theano.function(
+            [], self.layers[-1].accuracy(test_y),
+            givens={
+                self.x:
+                test_x
+            })
+        return test_accuracy()
+ 
 #### Define layer types
 
 class ConvPoolLayer(object):
