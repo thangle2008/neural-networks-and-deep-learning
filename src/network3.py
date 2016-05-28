@@ -187,22 +187,28 @@ class Network(object):
             best_validation_accuracy, best_iteration))
         print("Corresponding test accuracy of {0:.2%}".format(test_accuracy))
     
-    def accuracy(self, test_data, mini_batch_size):
+    def accuracy(self, test_data, mini_batch_size = 10):
         num_test_batches = size(test_data)/mini_batch_size
         test_x, test_y = test_data
-        i = T.lscalar()
-        test_accuracy = theano.function(
-            [i], self.layers[-1].accuracy(self.y),
-            givens={
-                self.x:
-                test_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size],
-                self.y:
-                test_y[i*self.mini_batch_size: (i+1)*self.mini_batch_size]
-            })
-        test_accuracy = np.mean(
-            [test_accuracy(j) for j in xrange(num_test_batches)])
+
+        init_layer = self.layers[0]
+        init_layer.set_inpt(self.x, self.x, mini_batch_size)
+        for j in xrange(1, len(self.layers)):
+            prev_layer, layer  = self.layers[j-1], self.layers[j]
+            layer.set_inpt(
+                prev_layer.output, prev_layer.output_dropout, mini_batch_size)
         
-        return test_accuracy
+        i = T.lscalar() 
+        test_mb_accuracy = theano.function(
+            [i], self.layers[-1].accuracy(self.y),
+            givens = {
+                self.x: test_x[i*mini_batch_size:(i+1)*mini_batch_size],
+                self.y: test_y[i*mini_batch_size:(i+1)*mini_batch_size]
+            })
+            
+        return np.mean(
+            [test_mb_accuracy(j) for j in xrange(num_test_batches)])
+
  
 #### Define layer types
 
@@ -229,7 +235,7 @@ class ConvPoolLayer(object):
 
         """
         self.filter_shape = filter_shape
-        self.image_shape = image_shape
+        self.image_shape = list(image_shape)
         self.poolsize = poolsize
         self.activation_fn=activation_fn
         # initialize weights and biases
@@ -244,9 +250,10 @@ class ConvPoolLayer(object):
                 np.random.normal(loc=0, scale=1.0, size=(filter_shape[0],)),
                 dtype=theano.config.floatX),
             borrow=True)
-        self.params = [self.w, self.b]
+        self.params = [self.w, self.b] 
 
     def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
+        self.image_shape[0] = mini_batch_size
         self.inpt = inpt.reshape(self.image_shape)
         conv_out = conv.conv2d(
             input=self.inpt, filters=self.w, filter_shape=self.filter_shape,
