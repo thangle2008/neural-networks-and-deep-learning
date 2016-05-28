@@ -187,16 +187,22 @@ class Network(object):
             best_validation_accuracy, best_iteration))
         print("Corresponding test accuracy of {0:.2%}".format(test_accuracy))
     
-    def accuracy(self, test_set):
-        test_x, test_y = test_set
-        i = T.
+    def accuracy(self, test_data, mini_batch_size):
+        num_test_batches = size(test_data)/mini_batch_size
+        test_x, test_y = test_data
+        i = T.lscalar()
         test_accuracy = theano.function(
-            [], self.layers[-1].accuracy(test_y),
+            [i], self.layers[-1].accuracy(self.y),
             givens={
                 self.x:
-                test_x
+                test_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size],
+                self.y:
+                test_y[i*self.mini_batch_size: (i+1)*self.mini_batch_size]
             })
-        return test_accuracy()
+        test_accuracy = np.mean(
+            [test_accuracy(j) for j in xrange(num_test_batches)])
+        
+        return test_accuracy
  
 #### Define layer types
 
