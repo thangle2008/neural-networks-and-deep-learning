@@ -112,19 +112,25 @@ class Network(object):
         num_validation_batches = size(validation_data)/mini_batch_size
         num_test_batches = size(test_data)/mini_batch_size
 
+        # current learning rate
+        current_lr = eta
+        min_lr = eta / 128.0
+        ceta = T.fscalar('ceta')
+        #ceta_printed = theano.printing.Print('The current learning rate is')(ceta)
+
         # define the (regularized) cost function, symbolic gradients, and updates
         l2_norm_squared = sum([(layer.w**2).sum() for layer in self.layers])
         cost = self.layers[-1].cost(self)+\
                0.5*lmbda*l2_norm_squared/num_training_batches
         grads = T.grad(cost, self.params)
-        updates = [(param, param-eta*grad)
+        updates = [(param, param-ceta*grad)
                    for param, grad in zip(self.params, grads)]
 
         # define functions to train a mini-batch, and to compute the
         # accuracy in validation and test mini-batches.
         i = T.lscalar() # mini-batch index
         train_mb = theano.function(
-            [i], cost, updates=updates,
+            [i, ceta], cost, updates=updates,
             givens={
                 self.x:
                 training_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size],
@@ -157,12 +163,15 @@ class Network(object):
         best_validation_accuracy = 0.0
         non_improvements = 0
         for epoch in xrange(epochs):
+            if current_lr > min_lr:
+                current_lr = eta / (epoch+1)
             for minibatch_index in xrange(num_training_batches):
                 iteration = num_training_batches*epoch+minibatch_index
                 if iteration % 1000 == 0:
                     print("Training mini-batch number {0}".format(iteration))
-                cost_ij = train_mb(minibatch_index)
+                cost_ij = train_mb(minibatch_index, current_lr)
                 if (iteration+1) % num_training_batches == 0:
+                    print("Current learning rate {0}".format(current_lr))
                     validation_accuracy = np.mean(
                         [validate_mb_accuracy(j) for j in xrange(num_validation_batches)])
                     print("Epoch {0}: validation accuracy {1:.2%}".format(
@@ -209,7 +218,67 @@ class Network(object):
         return np.mean(
             [test_mb_accuracy(j) for j in xrange(num_test_batches)])
 
- 
+    def save(self, filename):
+        """
+        Save the network to a file in the following format:
+        For each layer:
+            Name
+            Shape (filters, num of feature maps, ...)
+            Learned weights and biases
+        """
+        f = open(filename, "w")
+        for layer in self.layers:
+            name = layer.__class__.__name__
+
+            f.write(name + "\n")
+            
+            weights = layer.w.get_value(borrow=True)
+            biases = layer.b.get_value(borrow=True)
+
+            if name == "ConvPoolLayer":
+                f.write("{0} {1} {2} {3}\n".format(*layer.image_shape))
+                f.write("{0} {1} {2} {3}\n".format(*layer.filter_shape))
+            elif name == "FullyConnectedLayer" or name == "SoftmaxLayer":
+                f.write("{0} {1}\n".format(layer.n_in, layer.n_out))
+                           
+            for w in np.nditer(weights):
+                f.write("{0} ".format(w))
+            f.write("\n")
+
+            for b in np.nditer(biases):
+                f.write("{0} ".format(b))
+            f.write("\n")
+        f.close()
+
+    @classmethod
+    def load(cls, filename, mini_batch_size=10):
+        f = open(filename, "r")
+        layers = []
+
+        name = f.readline().rstrip('\n')
+        while name:
+            if name == "ConvPoolLayer":
+                image_shape = tuple(map(int, f.readline().rstrip('\n').split()))
+                filter_shape = tuple(map(int, f.readline().rstrip('\n').split()))
+                weights = map(float, f.readline().rstrip('\n').split())
+                biases = map(float, f.readline().rstrip('\n').split())
+                layers.append(ConvPoolLayer(image_shape=image_shape, 
+                    filter_shape=filter_shape, weights=weights, biases=biases))
+            elif name == "FullyConnectedLayer" or name == "SoftmaxLayer":
+                n_in, n_out = map(int, f.readline().rstrip('\n').split())
+                weights = map(float, f.readline().rstrip('\n').split())
+                biases = map(float, f.readline().rstrip('\n').split())
+                
+                if name == "FullyConnectedLayer":
+                    layers.append(FullyConnectedLayer(n_in=n_in, n_out=n_out,
+                        weights=weights, biases=biases))
+                else:
+                    layers.append(SoftmaxLayer(n_in=n_in, n_out=n_out,
+                        weights=weights, biases=biases))
+            name = f.readline().rstrip('\n')
+        f.close()
+        return Network(layers, mini_batch_size)
+
 #### Define layer types
 
 class ConvPoolLayer(object):
@@ -221,7 +290,7 @@ class ConvPoolLayer(object):
     """
 
     def __init__(self, filter_shape, image_shape, poolsize=(2, 2),
-                 activation_fn=sigmoid):
+                 activation_fn=sigmoid, weights=None, biases=None):
         """`filter_shape` is a tuple of length 4, whose entries are the number
         of filters, the number of input feature maps, the filter height, and the
         filter width.
@@ -240,16 +309,32 @@ class ConvPoolLayer(object):
         self.activation_fn=activation_fn
         # initialize weights and biases
         n_out = (filter_shape[0]*np.prod(filter_shape[2:])/np.prod(poolsize))
-        self.w = theano.shared(
-            np.asarray(
-                np.random.normal(loc=0, scale=np.sqrt(1.0/n_out), size=filter_shape),
-                dtype=theano.config.floatX),
-            borrow=True)
-        self.b = theano.shared(
-            np.asarray(
-                np.random.normal(loc=0, scale=1.0, size=(filter_shape[0],)),
-                dtype=theano.config.floatX),
-            borrow=True)
+
+        if weights:
+            self.w = theano.shared(
+                np.asarray(
+                    np.array(weights).reshape(filter_shape),
+                    dtype=theano.config.floatX),
+                borrow=True)
+        else:
+            self.w = theano.shared(
+                np.asarray(
+                    np.random.normal(loc=0, scale=np.sqrt(1.0/n_out), size=filter_shape),
+                    dtype=theano.config.floatX),
+                borrow=True)
+        
+        if biases:
+            self.b = theano.shared(
+                np.asarray(
+                    np.array(biases).reshape(filter_shape[0],),
+                    dtype=theano.config.floatX),
+                borrow=True)
+        else:
+            self.b = theano.shared(
+                np.asarray(
+                    np.random.normal(loc=0, scale=1.0, size=(filter_shape[0],)),
+                    dtype=theano.config.floatX),
+                borrow=True)
         self.params = [self.w, self.b] 
 
     def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
@@ -266,22 +351,39 @@ class ConvPoolLayer(object):
 
 class FullyConnectedLayer(object):
 
-    def __init__(self, n_in, n_out, activation_fn=sigmoid, p_dropout=0.0):
+    def __init__(self, n_in, n_out, activation_fn=sigmoid, p_dropout=0.0, 
+            weights=None, biases=None):
         self.n_in = n_in
         self.n_out = n_out
         self.activation_fn = activation_fn
         self.p_dropout = p_dropout
         # Initialize weights and biases
-        self.w = theano.shared(
-            np.asarray(
-                np.random.normal(
-                    loc=0.0, scale=np.sqrt(1.0/n_out), size=(n_in, n_out)),
-                dtype=theano.config.floatX),
-            name='w', borrow=True)
-        self.b = theano.shared(
-            np.asarray(np.random.normal(loc=0.0, scale=1.0, size=(n_out,)),
-                       dtype=theano.config.floatX),
-            name='b', borrow=True)
+        if weights:
+            self.w = theano.shared(
+                np.asarray(
+                    np.array(weights).reshape(n_in, n_out),
+                    dtype=theano.config.floatX),
+                name='w', borrow=True)
+        else:
+            self.w = theano.shared(
+                np.asarray(
+                    np.random.normal(
+                        loc=0.0, scale=np.sqrt(1.0/n_out), size=(n_in, n_out)),
+                    dtype=theano.config.floatX),
+                name='w', borrow=True)
+        
+        if biases:
+            self.b = theano.shared(
+                np.asarray(
+                    np.array(biases).reshape(n_out,),
+                    dtype=theano.config.floatX),
+                name='b', borrow=True)
+        else:
+            self.b = theano.shared(
+                np.asarray(np.random.normal(loc=0.0, scale=1.0, size=(n_out,)),
+                           dtype=theano.config.floatX),
+                name='b', borrow=True)
+
         self.params = [self.w, self.b]
 
     def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
@@ -300,17 +402,31 @@ class FullyConnectedLayer(object):
 
 class SoftmaxLayer(object):
 
-    def __init__(self, n_in, n_out, p_dropout=0.0):
+    def __init__(self, n_in, n_out, p_dropout=0.0, weights=None, biases=None):
         self.n_in = n_in
         self.n_out = n_out
         self.p_dropout = p_dropout
         # Initialize weights and biases
-        self.w = theano.shared(
-            np.zeros((n_in, n_out), dtype=theano.config.floatX),
-            name='w', borrow=True)
-        self.b = theano.shared(
-            np.zeros((n_out,), dtype=theano.config.floatX),
-            name='b', borrow=True)
+        if weights:
+            self.w = theano.shared(
+                np.asarray(
+                    np.array(weights).reshape(n_in, n_out),
+                    dtype=theano.config.floatX),
+                name='w', borrow=True)
+        else:
+            self.w = theano.shared(
+                np.zeros((n_in, n_out), dtype=theano.config.floatX),
+                name='w', borrow=True)
+        if biases:
+            self.b = theano.shared(
+                np.asarray(
+                    np.array(biases).reshape(n_out,),
+                    dtype=theano.config.floatX),
+                name='b', borrow=True)
+        else:
+            self.b = theano.shared(
+                np.zeros((n_out,), dtype=theano.config.floatX),
+                name='b', borrow=True)
         self.params = [self.w, self.b]
 
     def set_inpt(self, inpt, inpt_dropout, mini_batch_size):
