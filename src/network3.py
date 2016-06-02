@@ -101,7 +101,8 @@ class Network(object):
         self.output_dropout = self.layers[-1].output_dropout
 
     def SGD(self, training_data, epochs, mini_batch_size, eta,
-            validation_data, test_data, lmbda=0.0, early_stopping=False):
+            validation_data, test_data, lmbda=0.0, early_stopping=False,
+            diminishing_lr=False):
         """Train the network using mini-batch stochastic gradient descent."""
         training_x, training_y = training_data
         validation_x, validation_y = validation_data
@@ -112,11 +113,13 @@ class Network(object):
         num_validation_batches = size(validation_data)/mini_batch_size
         num_test_batches = size(test_data)/mini_batch_size
 
+        # cost log
+        costs = []
+ 
         # current learning rate
         current_lr = eta
         min_lr = eta / 128.0
         ceta = T.fscalar('ceta')
-        #ceta_printed = theano.printing.Print('The current learning rate is')(ceta)
 
         # define the (regularized) cost function, symbolic gradients, and updates
         l2_norm_squared = sum([(layer.w**2).sum() for layer in self.layers])
@@ -163,13 +166,14 @@ class Network(object):
         best_validation_accuracy = 0.0
         non_improvements = 0
         for epoch in xrange(epochs):
-            if current_lr > min_lr:
+            if diminishing_lr and current_lr > min_lr:
                 current_lr = eta / (epoch+1)
             for minibatch_index in xrange(num_training_batches):
                 iteration = num_training_batches*epoch+minibatch_index
+                cost_ij = train_mb(minibatch_index, current_lr)
                 if iteration % 1000 == 0:
                     print("Training mini-batch number {0}".format(iteration))
-                cost_ij = train_mb(minibatch_index, current_lr)
+                    costs.append(cost_ij)
                 if (iteration+1) % num_training_batches == 0:
                     print("Current learning rate {0}".format(current_lr))
                     validation_accuracy = np.mean(
@@ -188,13 +192,14 @@ class Network(object):
                                 test_accuracy))
                     else:
                         non_improvements += 1
-                        if non_improvements >= 10:
+                        if early_stopping and non_improvements >= 10:
                             print('There has been no more improvement in accuracy')
-                            break
+                            return costs
         print("Finished training network.")
         print("Best validation accuracy of {0:.2%} obtained at iteration {1}".format(
             best_validation_accuracy, best_iteration))
         print("Corresponding test accuracy of {0:.2%}".format(test_accuracy))
+        return costs
     
     def accuracy(self, test_data, mini_batch_size = 10):
         num_test_batches = size(test_data)/mini_batch_size
