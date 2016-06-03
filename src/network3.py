@@ -115,7 +115,7 @@ class Network(object):
 
         # cost log
         costs = []
-	training_accuracies = []
+    	training_accuracies = []
  
         # current learning rate
         current_lr = eta
@@ -172,20 +172,16 @@ class Network(object):
                 test_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size]
             })
         # Do the actual training
+        last_validation_accuracy = 0.0
         best_validation_accuracy = 0.0
+        bold_driver_threshold = 10 ** (-10)
         non_improvements = 0
         for epoch in xrange(epochs):
-            if epoch > 0 and epoch % 10 == 0 and diminishing_lr and current_lr > min_lr:
-                current_lr = current_lr / 2.0
             for minibatch_index in xrange(num_training_batches):
                 iteration = num_training_batches*epoch+minibatch_index
                 cost_ij = train_mb(minibatch_index, current_lr)
-                if iteration % 10 == 0:
-                    costs.append(cost_ij)
-#                    train_acc = np.mean(
-#                        [train_mb_accuracy(j) for j in xrange(num_training_batches)])
-#		    training_accuracies.append(train_acc)
                 if iteration % 1000 == 0:
+                    costs.append(cost_ij)
                     print("Training mini-batch number {0}".format(iteration))
                 if (iteration+1) % num_training_batches == 0:
                     print("Current learning rate {0}".format(current_lr))
@@ -193,6 +189,15 @@ class Network(object):
                         [validate_mb_accuracy(j) for j in xrange(num_validation_batches)])
                     print("Epoch {0}: validation accuracy {1:.2%}".format(
                         epoch, validation_accuracy))
+                    # bold driver algorithm for learning rate adaptation
+                    if diminishing_lr:
+                        if validation_accuracy > last_validation_accuracy:
+                            current_lr = 1.02 * current_lr
+                        elif current_lr > min_lr:
+                            decrease = last_validation_accuracy - validation_accuracy
+                            if (decrease/last_validation_accuracy) > bold_driver_threshold:
+                                current_lr = current_lr / 2.0 
+                    last_validation_accuracy = validation_accuracy
                     if validation_accuracy >= best_validation_accuracy:
                         print("This is the best validation accuracy to date.")
                         best_validation_accuracy = validation_accuracy
@@ -232,7 +237,7 @@ class Network(object):
                 self.x: test_x[i*mini_batch_size:(i+1)*mini_batch_size],
                 self.y: test_y[i*mini_batch_size:(i+1)*mini_batch_size]
             })
-            
+              
         return np.mean(
             [test_mb_accuracy(j) for j in xrange(num_test_batches)])
 
