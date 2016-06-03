@@ -49,7 +49,7 @@ from theano.tensor import tanh
 
 
 #### Constants
-GPU = True
+GPU = False
 if GPU:
     print "Trying to run under a GPU.  If this is not desired, then modify "+\
         "network3.py\nto set the GPU flag to False."
@@ -101,7 +101,7 @@ class Network(object):
         self.output_dropout = self.layers[-1].output_dropout
 
     def SGD(self, training_data, epochs, mini_batch_size, eta,
-            validation_data, test_data, lmbda=0.0, early_stopping=False,
+            validation_data, test_data=None, lmbda=0.0, early_stopping=False,
             diminishing_lr=False):
         """Train the network using mini-batch stochastic gradient descent."""
         training_x, training_y = training_data
@@ -115,6 +115,7 @@ class Network(object):
 
         # cost log
         costs = []
+	training_accuracies = []
  
         # current learning rate
         current_lr = eta
@@ -134,6 +135,14 @@ class Network(object):
         i = T.lscalar() # mini-batch index
         train_mb = theano.function(
             [i, ceta], cost, updates=updates,
+            givens={
+                self.x:
+                training_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size],
+                self.y:
+                training_y[i*self.mini_batch_size: (i+1)*self.mini_batch_size]
+            })
+        train_mb_accuracy = theano.function(
+            [i], self.layers[-1].accuracy(self.y),
             givens={
                 self.x:
                 training_x[i*self.mini_batch_size: (i+1)*self.mini_batch_size],
@@ -166,14 +175,18 @@ class Network(object):
         best_validation_accuracy = 0.0
         non_improvements = 0
         for epoch in xrange(epochs):
-            if diminishing_lr and current_lr > min_lr:
-                current_lr = eta / (epoch+1)
+            if epoch > 0 and epoch % 10 == 0 and diminishing_lr and current_lr > min_lr:
+                current_lr = current_lr / 2.0
             for minibatch_index in xrange(num_training_batches):
                 iteration = num_training_batches*epoch+minibatch_index
                 cost_ij = train_mb(minibatch_index, current_lr)
+                if iteration % 10 == 0:
+                    costs.append(cost_ij)
+#                    train_acc = np.mean(
+#                        [train_mb_accuracy(j) for j in xrange(num_training_batches)])
+#		    training_accuracies.append(train_acc)
                 if iteration % 1000 == 0:
                     print("Training mini-batch number {0}".format(iteration))
-                    costs.append(cost_ij)
                 if (iteration+1) % num_training_batches == 0:
                     print("Current learning rate {0}".format(current_lr))
                     validation_accuracy = np.mean(
@@ -194,12 +207,12 @@ class Network(object):
                         non_improvements += 1
                         if early_stopping and non_improvements >= 10:
                             print('There has been no more improvement in accuracy')
-                            return costs
+                            return costs, training_accuracies
         print("Finished training network.")
         print("Best validation accuracy of {0:.2%} obtained at iteration {1}".format(
             best_validation_accuracy, best_iteration))
         print("Corresponding test accuracy of {0:.2%}".format(test_accuracy))
-        return costs
+        return costs, training_accuracies
     
     def accuracy(self, test_data, mini_batch_size = 10):
         num_test_batches = size(test_data)/mini_batch_size

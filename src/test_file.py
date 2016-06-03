@@ -5,28 +5,27 @@ from network3 import ConvPoolLayer, FullyConnectedLayer, SoftmaxLayer
 from network3 import ReLU
 
 training_data, validation_data, test_data = \
-            network3.load_data_shared('../data/bird_image.pkl.gz')
-dim = 128
+            network3.load_data_shared('../data/bird_image_full_expanded.pkl.gz')
 
-#expanded_training_data, _, _ = network3.load_data_shared("../data/mnist_expanded.pkl.gz")
 mini_batch_size = 10
 
 net = Network([
-        ConvPoolLayer(image_shape=(mini_batch_size, 1, dim, dim),
-                      filter_shape=(20, 1, 9, 9),
+        ConvPoolLayer(image_shape=(mini_batch_size, 1, 28, 28),
+                      filter_shape=(20, 1, 5, 5),
                       poolsize=(2,2),
                       activation_fn=ReLU),
-        ConvPoolLayer(image_shape=(mini_batch_size, 20, 60, 60),
-                      filter_shape=(40, 20, 9, 9),
+        ConvPoolLayer(image_shape=(mini_batch_size, 20, 12, 12),
+                      filter_shape=(40, 20, 5, 5),
                       poolsize=(2,2),
                       activation_fn=ReLU),
-        FullyConnectedLayer(n_in=40*26*26, n_out=100, activation_fn=ReLU),        
-        SoftmaxLayer(n_in=100, n_out=9)], mini_batch_size)
+        FullyConnectedLayer(n_in=40*4*4, n_out=100, activation_fn=ReLU, p_dropout=0.5),        
+        SoftmaxLayer(n_in=100, n_out=10)], mini_batch_size)
 
-costs = net.SGD(training_data, 60, mini_batch_size, 0.03, validation_data, test_data, lmbda=0.1) 
-#mb = range(0, 1000 * len(costs), 1000)
-#plt.plot(mb, costs)
-#plt.ylabel('cost')
-#plt.show()
+costs, train_acc = net.SGD(training_data, 100, mini_batch_size, 0.3, validation_data, test_data, lmbda=0.0,
+	diminishing_lr=True) 
+it = range(0, 10 * len(costs), 10)
+plt.plot(it, costs)
+plt.ylabel('cost')
+plt.show()
 
 #net.save("out.txt")
